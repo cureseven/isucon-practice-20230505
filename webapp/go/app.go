@@ -131,7 +131,13 @@ func authenticated(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+var userCache = make(map[int]*User)
+
 func getUser(w http.ResponseWriter, userID int) *User {
+	if user, ok := userCache[userID]; ok {
+		return user
+	}
+
 	row := db.QueryRow(`SELECT * FROM users WHERE id = ?`, userID)
 	user := User{}
 	err := row.Scan(&user.ID, &user.AccountName, &user.NickName, &user.Email, new(string))
@@ -139,6 +145,7 @@ func getUser(w http.ResponseWriter, userID int) *User {
 		checkErr(ErrContentNotFound)
 	}
 	checkErr(err)
+	userCache[userID] = &user
 	return &user
 }
 
