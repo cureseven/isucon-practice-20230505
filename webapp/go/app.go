@@ -163,6 +163,32 @@ func isFriend(w http.ResponseWriter, r *http.Request, anotherID int) bool {
 	return *cnt > 0
 }
 
+func friendUserIds(w http.ResponseWriter, r *http.Request) ([]int, error) {
+	session := getSession(w, r)
+	id := session.Values["user_id"]
+
+	var friend_user_ids []int
+
+	rows, err := db.Query(`SELECT another AS friend_user_id FROM relations WHERE (one = ?) UNION  SELECT one FROM relations WHERE (another = ?)`, id, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var friend_user_id int
+		err := rows.Scan(&friend_user_id)
+		if err != nil {
+			return nil, err
+		}
+		friend_user_ids = append(friend_user_ids, friend_user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return friend_user_ids, nil
+}
+
 func isFriendAccount(w http.ResponseWriter, r *http.Request, name string) bool {
 	user := getUserFromAccount(w, name)
 	if user == nil {
@@ -340,13 +366,17 @@ LIMIT 10`, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
+	fids, err := friendUserIds(w, r)
+	if err != nil {
+		checkErr(err)
+	}
 	entriesOfFriends := make([]Entry, 0, 10)
 	for rows.Next() {
 		var id, userID, private int
 		var body string
 		var createdAt time.Time
 		checkErr(rows.Scan(&id, &userID, &private, &body, &createdAt))
-		if !isFriend(w, r, userID) {
+		if !include(fids, userID) {
 			continue
 		}
 		entriesOfFriends = append(entriesOfFriends, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt})
@@ -364,7 +394,7 @@ LIMIT 10`, user.ID)
 	for rows.Next() {
 		c := Comment{}
 		checkErr(rows.Scan(&c.ID, &c.EntryID, &c.UserID, &c.Comment, &c.CreatedAt))
-		if !isFriend(w, r, c.UserID) {
+		if !include(fids, c.UserID) {
 			continue
 		}
 		row := db.QueryRow(`SELECT * FROM entries WHERE id = ?`, c.EntryID)
@@ -385,7 +415,8 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT *  FROM (SELECT * FROM  relations WHERE one = ? UNION SELECT * FROM relations WHERE another = ?) as base ORDER BY created_at DESC`, user.ID, user.ID)
+	rows, err = db.Query(`SELECT *  FROM (SELECT * FROM  relations WHERE one = ? UNION SELECT * FROM relations WHERE another = ?) as base ORDER BY created_at DESC
+`, user.ID, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
@@ -439,6 +470,15 @@ LIMIT 10`, user.ID)
 	}{
 		*user, prof, entries, commentsForMe, entriesOfFriends, commentsOfFriends, friends, footprints,
 	})
+}
+
+func include(slice []int, target int) bool {
+	for _, num := range slice {
+		if num == target {
+			return true
+		}
+	}
+	return false
 }
 
 func GetProfile(w http.ResponseWriter, r *http.Request) {
