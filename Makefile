@@ -1,6 +1,6 @@
 .PHONY: *
 
-gogo: stop-services build truncate-logs start-services
+gogo: stop-services build truncate-logs start-services bench
 
 build:
 	make -C webapp/go app
@@ -22,3 +22,6 @@ truncate-logs:
 	sudo truncate --size 0 /var/log/mysql/mysql-slow.log
 	sudo chmod 777 /var/log/mysql/mysql-slow.log
 	sudo journalctl --vacuum-size=1K
+
+bench:
+	~/bench.sh
