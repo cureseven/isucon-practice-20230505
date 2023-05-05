@@ -384,7 +384,7 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT * FROM relations WHERE one = ? OR another = ? ORDER BY created_at DESC`, user.ID, user.ID)
+	rows, err = db.Query(`SELECT *  FROM (SELECT * FROM  relations WHERE one = ? UNION SELECT * FROM relations WHERE another = ?) as base ORDER BY created_at DESC`, user.ID, user.ID)
 	if err != sql.ErrNoRows {
 		checkErr(err)
 	}
