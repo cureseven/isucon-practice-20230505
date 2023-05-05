@@ -787,7 +787,7 @@ func main() {
 		ssecret = "beermoris"
 	}
 
-	db, err = sql.Open("mysql", user+":"+password+"@tcp("+host+":"+strconv.Itoa(port)+")/"+dbname+"?loc=Local&parseTime=true&interpolateParams=true")
+	db, err = sql.Open("mysql", user+":"+password+"@tcp("+host+":"+strconv.Itoa(port)+")/"+dbname+"?loc=Local&parseTime=true")
 	if err != nil {
 		log.Fatalf("Failed to connect to DB: %s.", err.Error())
 	}
@@ -832,5 +832,6 @@ func main() {
 func checkErr(err error) {
 	if err != nil {
 		panic(err)
+		log.Fatalf("パニック: %s", err.Error())
 	}
 }
