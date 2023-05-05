@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -131,22 +132,32 @@ func authenticated(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-var userCache = make(map[int]*User)
+var (
+	userCache   = make(map[int]*User)
+	userCacheMu sync.RWMutex
+)
 
 func getUser(w http.ResponseWriter, userID int) *User {
-	if user, ok := userCache[userID]; ok {
-		return user
+	userCacheMu.RLock()
+	user, ok := userCache[userID]
+	userCacheMu.RUnlock()
+
+	if !ok {
+		row := db.QueryRow(`SELECT * FROM users WHERE id = ?`, userID)
+		user = &User{}
+		err := row.Scan(&user.ID, &user.AccountName, &user.NickName, &user.Email, new(string))
+		if err == sql.ErrNoRows {
+			checkErr(ErrContentNotFound)
+		}
+		checkErr(err)
+
+		// 取得したユーザー情報をキャッシュに格納
+		userCacheMu.Lock()
+		userCache[userID] = user
+		userCacheMu.Unlock()
 	}
 
-	row := db.QueryRow(`SELECT * FROM users WHERE id = ?`, userID)
-	user := User{}
-	err := row.Scan(&user.ID, &user.AccountName, &user.NickName, &user.Email, new(string))
-	if err == sql.ErrNoRows {
-		checkErr(ErrContentNotFound)
-	}
-	checkErr(err)
-	userCache[userID] = &user
-	return &user
+	return user
 }
 
 func getUserFromAccount(w http.ResponseWriter, name string) *User {
