@@ -572,9 +572,9 @@ func ListEntries(w http.ResponseWriter, r *http.Request) {
 	owner := getUserFromAccount(w, account)
 	var query string
 	if permitted(w, r, owner.ID) {
-		query = `SELECT *, (SELECT COUNT(*) FROM comments WHERE entry_id = ?) AS c FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`
+		query = `SELECT *, (SELECT COUNT(*) FROM comments WHERE entry_id = entries.id) AS c FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`
 	} else {
-		query = `SELECT *, (SELECT COUNT(*) FROM comments WHERE entry_id = ?) AS c FROM entries WHERE user_id = ? AND private=0 ORDER BY created_at DESC LIMIT 20`
+		query = `SELECT *, (SELECT COUNT(*) FROM comments WHERE entry_id = entries.id) AS c FROM entries WHERE user_id = ? AND private=0 ORDER BY created_at DESC LIMIT 20`
 	}
 	rows, err := db.Query(query, owner.ID)
 	if err != sql.ErrNoRows {
