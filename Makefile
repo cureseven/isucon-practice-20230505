@@ -27,4 +27,4 @@ bench:
 	~/bench.sh
 
 kataribe:
-	sudo cat /var/log/nginx/access.log | ../kataribe
+	sudo cat /var/log/nginx/access.log | ../kataribe -conf ./kataribe.toml | grep --after-context 20 "Top 20 Sort By Total"

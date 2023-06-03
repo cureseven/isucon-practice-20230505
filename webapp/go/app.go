@@ -390,17 +390,22 @@ LIMIT 10`, user.ID)
 		checkErr(err)
 	}
 
-	q := `SELECT id, user_id, private, body, created_at FROM entries WHERE user_id IN (?) ORDER BY created_at DESC LIMIT 10`
-	var entriesFromDBOfFriends []EntryFromDB
-	if err := dbx.Select(&entriesFromDBOfFriends, q, fids); err != nil {
-		checkErr(err)
-	}
 	var entriesOfFriends []Entry
-	for _, val := range entriesFromDBOfFriends {
-		entriesOfFriends = append(entriesOfFriends, Entry{val.ID, val.UserID, val.Private == 1, strings.SplitN(val.body, "\n", 2)[0], strings.SplitN(val.body, "\n", 2)[1], val.CreatedAt, 0})
-		if len(entriesOfFriends) >= 10 {
-			break
+	if len(fids) != 0 {
+		q := `SELECT id, user_id, private, body, created_at FROM entries WHERE user_id IN (?) ORDER BY created_at DESC LIMIT 10`
+		q, params, err := sqlx.In(q, fids)
+		if err != nil {
+			log.Fatal(err)
 		}
+		var entriesFromDBOfFriends []EntryFromDB
+		if err := dbx.Select(&entriesFromDBOfFriends, q, params...); err != nil {
+			checkErr(err)
+		}
+		for _, val := range entriesFromDBOfFriends {
+			entriesOfFriends = append(entriesOfFriends, Entry{val.ID, val.UserID, val.Private == 1, strings.SplitN(val.body, "\n", 2)[0], strings.SplitN(val.body, "\n", 2)[1], val.CreatedAt, 0})
+		}
+	} else {
+		entriesOfFriends = []Entry{}
 	}
 	rows.Close()
 
