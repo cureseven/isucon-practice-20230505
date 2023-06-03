@@ -25,3 +25,6 @@ truncate-logs:
 
 bench:
 	~/bench.sh
+
+kataribe:
+	sudo cat /var/log/nginx/access.log | ../kataribe
