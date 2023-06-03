@@ -43,12 +43,13 @@ type Profile struct {
 }
 
 type Entry struct {
-	ID        int
-	UserID    int
-	Private   bool
-	Title     string
-	Content   string
-	CreatedAt time.Time
+	ID          int
+	UserID      int
+	Private     bool
+	Title       string
+	Content     string
+	CreatedAt   time.Time
+	NumComments int
 }
 
 type Comment struct {
@@ -302,13 +303,7 @@ func render(w http.ResponseWriter, r *http.Request, status int, file string, dat
 			var body string
 			var createdAt time.Time
 			checkErr(row.Scan(&entryID, &userID, &private, &body, &createdAt))
-			return Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
-		},
-		"numComments": func(id int) int {
-			row := db.QueryRow(`SELECT COUNT(*) AS c FROM comments WHERE entry_id = ?`, id)
-			var n int
-			checkErr(row.Scan(&n))
-			return n
+			return Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0}
 		},
 	}
 	tpl := template.Must(template.New(file).Funcs(fmap).ParseFiles(getTemplatePath(file), getTemplatePath("header.html")))
@@ -359,7 +354,7 @@ func GetIndex(w http.ResponseWriter, r *http.Request) {
 		var body string
 		var createdAt time.Time
 		checkErr(rows.Scan(&id, &userID, &private, &body, &createdAt))
-		entries = append(entries, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt})
+		entries = append(entries, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0})
 	}
 	rows.Close()
 
@@ -397,7 +392,7 @@ LIMIT 10`, user.ID)
 		if !include(fids, userID) {
 			continue
 		}
-		entriesOfFriends = append(entriesOfFriends, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt})
+		entriesOfFriends = append(entriesOfFriends, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0})
 		if len(entriesOfFriends) >= 10 {
 			break
 		}
@@ -420,7 +415,7 @@ LIMIT 10`, user.ID)
 		var body string
 		var createdAt time.Time
 		checkErr(row.Scan(&id, &userID, &private, &body, &createdAt))
-		entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
+		entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0}
 		if entry.Private {
 			if !permitted(w, r, entry.UserID) {
 				continue
@@ -528,7 +523,7 @@ func GetProfile(w http.ResponseWriter, r *http.Request) {
 		var body string
 		var createdAt time.Time
 		checkErr(rows.Scan(&id, &userID, &private, &body, &createdAt))
-		entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
+		entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0}
 		entries = append(entries, entry)
 	}
 	rows.Close()
@@ -577,9 +572,9 @@ func ListEntries(w http.ResponseWriter, r *http.Request) {
 	owner := getUserFromAccount(w, account)
 	var query string
 	if permitted(w, r, owner.ID) {
-		query = `SELECT * FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`
+		query = `SELECT *, (SELECT COUNT(*) FROM comments WHERE entry_id = entries.id) AS c FROM entries WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`
 	} else {
-		query = `SELECT * FROM entries WHERE user_id = ? AND private=0 ORDER BY created_at DESC LIMIT 20`
+		query = `SELECT *, (SELECT COUNT(*) FROM comments WHERE entry_id = entries.id) AS c FROM entries WHERE user_id = ? AND private=0 ORDER BY created_at DESC LIMIT 20`
 	}
 	rows, err := db.Query(query, owner.ID)
 	if err != sql.ErrNoRows {
@@ -590,8 +585,9 @@ func ListEntries(w http.ResponseWriter, r *http.Request) {
 		var id, userID, private int
 		var body string
 		var createdAt time.Time
-		checkErr(rows.Scan(&id, &userID, &private, &body, &createdAt))
-		entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
+		var numComments int
+		checkErr(rows.Scan(&id, &userID, &private, &body, &createdAt, &numComments))
+		entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, numComments}
 		entries = append(entries, entry)
 	}
 	rows.Close()
@@ -619,7 +615,7 @@ func GetEntry(w http.ResponseWriter, r *http.Request) {
 		checkErr(ErrContentNotFound)
 	}
 	checkErr(err)
-	entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
+	entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0}
 	owner := getUser(w, entry.UserID)
 	if entry.Private {
 		if !permitted(w, r, owner.ID) {
@@ -685,7 +681,7 @@ func PostComment(w http.ResponseWriter, r *http.Request) {
 	}
 	checkErr(err)
 
-	entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt}
+	entry := Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0}
 	owner := getUser(w, entry.UserID)
 	if entry.Private {
 		if !permitted(w, r, owner.ID) {
