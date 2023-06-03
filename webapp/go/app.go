@@ -18,9 +18,11 @@ import (
 	"github.com/gorilla/context"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
+	"github.com/jmoiron/sqlx"
 )
 
 var (
+	dbx   *sqlx.DB
 	db    *sql.DB
 	store *sessions.CookieStore
 )
@@ -50,6 +52,14 @@ type Entry struct {
 	Content     string
 	CreatedAt   time.Time
 	NumComments int
+}
+
+type EntryFromDB struct {
+	ID        int       `db:"id"`
+	UserID    int       `db:"user_id"`
+	Private   int       `db:"private"`
+	body      string    `db:"body"`
+	CreatedAt time.Time `db:"created_at"`
 }
 
 type Comment struct {
@@ -375,27 +385,23 @@ LIMIT 10`, user.ID)
 	}
 	rows.Close()
 
-	rows, err = db.Query(`SELECT * FROM entries ORDER BY created_at DESC LIMIT 1000`)
-	if err != sql.ErrNoRows {
-		checkErr(err)
-	}
 	fids, err := friendUserIds(w, r)
 	if err != nil {
 		checkErr(err)
 	}
-	entriesOfFriends := make([]Entry, 0, 10)
-	for rows.Next() {
-		var id, userID, private int
-		var body string
-		var createdAt time.Time
-		checkErr(rows.Scan(&id, &userID, &private, &body, &createdAt))
-		if !include(fids, userID) {
-			continue
-		}
-		entriesOfFriends = append(entriesOfFriends, Entry{id, userID, private == 1, strings.SplitN(body, "\n", 2)[0], strings.SplitN(body, "\n", 2)[1], createdAt, 0})
-		if len(entriesOfFriends) >= 10 {
-			break
-		}
+
+	q := `SELECT id, user_id, private, body, created_at FROM entries WHERE user_id IN (?) ORDER BY created_at DESC LIMIT 10`
+	q, params, err := sqlx.In(q, fids)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var entriesFromDBOfFriends []EntryFromDB
+	if err := dbx.Select(&entriesFromDBOfFriends, q, params...); err != nil {
+		checkErr(err)
+	}
+	var entriesOfFriends []Entry
+	for _, val := range entriesFromDBOfFriends {
+		entriesOfFriends = append(entriesOfFriends, Entry{val.ID, val.UserID, val.Private == 1, strings.SplitN(val.body, "\n", 2)[0], strings.SplitN(val.body, "\n", 2)[1], val.CreatedAt, 0})
 	}
 	rows.Close()
 
